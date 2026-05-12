@@ -301,3 +301,18 @@ app.get("/user/:id", async (req, res) => {
 app.listen(5000, () => {
   console.log("Server running on port 5000");
 });
+
+
+// ======================
+// LIST PAYMENTS
+// ======================
+
+app.get("/payments", async (req, res) => {
+  try {
+    const payments = await Payment.find().sort({ createdAt: -1 });
+    return res.json({ success: true, payments });
+  } catch (error) {
+    console.error("Payments fetch error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
