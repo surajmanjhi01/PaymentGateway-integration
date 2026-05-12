@@ -2,29 +2,42 @@ require("dotenv").config();
 
 const express = require("express");
 const app = express();
-const Razorpay = require("razorpay");
 const cors = require("cors");
+const Razorpay = require("razorpay");
+const crypto = require("crypto");
 const mongoose = require("mongoose");
+
 const connectDB = require("./Database/db");
+
 const Payment = require("./schemas/PaymentSchema");
 const User = require("./schemas/UserSchema");
-const authRoutes = require("./routes/routes");
+const UserCourse = require("./schemas/userCourseSchema");
 
+const authRoutes = require("./routes/routes");
+const protectCourse = require("./middleware/authMiddleware");
+
+
+// ======================
+// MIDDLEWARE
+// ======================
 
 app.use(cors({
-  origin: "http://localhost:5173"
+  origin: true
 }));
-
-console.log("MONGO URL:", process.env.MONGO_URL);
-
-connectDB();   // ✅ MUST CALL
 
 app.use(express.json());
 
-// ✅ Authentication Routes
-app.use("/auth", authRoutes);
+
+// ======================
+// DATABASE
+// ======================
+
+connectDB();
 
 
+// ======================
+// RAZORPAY CONFIG
+// ======================
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -32,17 +45,19 @@ const razorpay = new Razorpay({
 });
 
 
+// ======================
+// CREATE ORDER
+// ======================
 
 app.post("/create-order", async (req, res) => {
   try {
-    console.log("Incoming body:", req.body); // 👈 add
 
-    const { amount, userId } = req.body;
+    const { amount, userId, courseId } = req.body;
 
-    if (!amount || !userId) {
+    if (!amount || !userId || !courseId) {
       return res.status(400).json({
         success: false,
-        message: "amount and userId required"
+        message: "amount, userId and courseId required"
       });
     }
 
@@ -51,7 +66,8 @@ app.post("/create-order", async (req, res) => {
       currency: "INR",
       receipt: "receipt_" + Date.now(),
       notes: {
-        userId: userId
+        userId,
+        courseId
       }
     };
 
@@ -63,7 +79,8 @@ app.post("/create-order", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("CREATE ORDER ERROR:", error); // 👈 IMPORTANT
+    console.error("CREATE ORDER ERROR:", error);
+
     res.status(500).json({
       success: false,
       message: "Order creation failed"
@@ -72,12 +89,12 @@ app.post("/create-order", async (req, res) => {
 });
 
 
-
-const crypto = require("crypto");
+// ======================
+// VERIFY PAYMENT
+// ======================
 
 app.post("/verify-payment", async (req, res) => {
   console.log("VERIFY API HIT");
-  console.log(req.body);
 
   const {
     razorpay_order_id,
@@ -85,6 +102,7 @@ app.post("/verify-payment", async (req, res) => {
     razorpay_signature
   } = req.body;
 
+  // 🔐 Verify Signature
   const body = razorpay_order_id + "|" + razorpay_payment_id;
 
   const expectedSignature = crypto
@@ -92,7 +110,6 @@ app.post("/verify-payment", async (req, res) => {
     .update(body)
     .digest("hex");
 
-  // ❌ Signature mismatch
   if (expectedSignature !== razorpay_signature) {
     return res.status(400).json({
       success: false,
@@ -101,63 +118,71 @@ app.post("/verify-payment", async (req, res) => {
   }
 
   try {
-    // 🔒 STEP 5 — CHECK DUPLICATE BEFORE ANYTHING
+    // Fetch order details
+    const order = await razorpay.orders.fetch(razorpay_order_id);
+
+    const userId = order.notes?.userId;
+    const courseId = order.notes?.courseId;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "Order is missing userId"
+      });
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
     const existingPayment = await Payment.findOne({
       paymentId: razorpay_payment_id
     });
 
-    if (existingPayment) {
-      console.log("⚠️ Duplicate payment detected:", razorpay_payment_id);
-
-      return res.json({
-        success: true,
-        message: "Payment already recorded"
+    // Save Payment
+    if (!existingPayment) {
+      const newPayment = new Payment({
+        orderId: razorpay_order_id,
+        paymentId: razorpay_payment_id,
+        status: "success",
+        amount: order.amount / 100,
+        userId,
+        userName: user.fullName,
+        userEmail: user.email
       });
+
+      await newPayment.save();
     }
 
-    // ✅ Fetch order details from Razorpay
-    const order = await razorpay.orders.fetch(razorpay_order_id);
-    console.log("ORDER NOTES:", order.notes);
+    // 🔥 Grant Course Access
+    if (userId && courseId) {
 
-    // Try to resolve user details from notes.userId (preferred)
-    let userName = "Unknown";
-    let userEmail = "Unknown";
-    let userRefId = null;
-    const noteUserId = order.notes?.userId;
-    if (noteUserId) {
-      userRefId = noteUserId;
-      try {
-        const foundUser = await User.findById(noteUserId).select("fullName email name");
-        if (foundUser) {
-          userName = foundUser.fullName || foundUser.name || "Unknown";
-          userEmail = foundUser.email || "Unknown";
-        }
-      } catch (e) {
-        console.error("Error fetching user by note userId:", e);
-      }
+      await UserCourse.updateOne(
+        { userId, courseId },
+        {
+          $set: {
+            paymentId: razorpay_payment_id,
+            orderId: razorpay_order_id
+          }
+        },
+        { upsert: true }
+      );
+
+      console.log("✅ Course Access Granted");
     }
-
-    // ✅ Create new payment entry (attach userId if available)
-    const newPayment = new Payment({
-      orderId: razorpay_order_id,
-      paymentId: razorpay_payment_id,
-      status: "success",
-      amount: order.amount / 100 || 0,
-      userId: userRefId,
-      userName,
-      userEmail
-    });
-
-    await newPayment.save();
-
-    console.log("✅ Payment saved to DB:", newPayment);
 
     return res.json({
       success: true,
-      message: "Payment verified and stored"
+      message: "Payment verified and access granted"
     });
 
   } catch (error) {
+
     console.error("DB Error:", error);
 
     return res.status(500).json({
@@ -167,62 +192,112 @@ app.post("/verify-payment", async (req, res) => {
   }
 });
 
-app.get("/payments", async (req, res) => {
-  try {
-    const payments = await Payment.find().sort({ createdAt: -1 });
 
-    res.json({
-      success: true,
-      payments
-    });
+// ======================
+// CHECK COURSE ACCESS
+// ======================
 
-  } catch (error) {
-    console.error("Fetch payments error:", error);
+app.post("/course-access", async (req, res) => {
 
-    res.status(500).json({
+  const { userId, courseId } = req.body;
+
+  const access = await UserCourse.findOne({
+    userId,
+    courseId
+  });
+
+  if (!access) {
+    return res.json({
       success: false,
-      message: "Failed to fetch payments"
+      message: "Payment required"
     });
   }
+
+  res.json({
+    success: true,
+    message: "Access granted"
+  });
 });
 
 
+// ======================
+// PROTECTED COURSE ROUTE
+// ======================
 
-app.post("/create-user", async (req, res) => {
+app.get("/course", protectCourse, async (req, res) => {
+  const user = req.user;
+  const courseId = req.query.courseId;
+
+  if (!courseId) {
+    return res.status(400).json({
+      success: false,
+      message: "courseId required"
+    });
+  }
+
+  const access = await UserCourse.findOne({
+    userId: user._id,
+    courseId
+  });
+
+  if (!access) {
+    return res.status(403).json({
+      success: false,
+      message: "Course access required"
+    });
+  }
+
+  return res.json({
+    success: true,
+    message: "Access granted",
+    courseId,
+    content: "Premium course content"
+  });
+});
+
+
+// ======================
+// USER ROUTES
+// ======================
+
+app.use("/auth", authRoutes);
+
+
+// ======================
+// GET USER
+// ======================
+
+app.get("/user/:id", async (req, res) => {
   try {
-    const { name, email } = req.body;
 
-    // 🔍 Check if user already exists
-    let user = await User.findOne({ email });
+    const user = await User.findById(req.params.id);
 
     if (!user) {
-      // ✅ Create new user
-      user = new User({
-        name,
-        email
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
       });
-
-      await user.save();
     }
 
     res.json({
       success: true,
-      userId: user._id
+      user
     });
 
   } catch (error) {
-    console.error("User error:", error);
+
     res.status(500).json({
       success: false,
-      message: "User creation failed"
+      message: "Server error"
     });
   }
 });
 
-app.get("/", (req, res) => {
-  res.send("Backend running");
-});
+
+// ======================
+// START SERVER
+// ======================
 
 app.listen(5000, () => {
-  console.log(`Server started on port ${5000}`);
+  console.log("Server running on port 5000");
 });

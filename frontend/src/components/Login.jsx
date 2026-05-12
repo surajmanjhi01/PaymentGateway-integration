@@ -34,10 +34,20 @@ function Login() {
       const data = await response.json();
 
       if (response.ok) {
+        localStorage.clear();
+
         // Store user info in localStorage
         localStorage.setItem("userId", data.userId);
         localStorage.setItem("fullName", data.fullName);
         localStorage.setItem("email", data.email);
+        localStorage.setItem(
+          "user",
+          JSON.stringify({
+            _id: data.userId,
+            fullName: data.fullName,
+            email: data.email,
+          })
+        );
         
         alert("Login successful!");
         navigate("/init");

@@ -9,7 +9,7 @@ const Failure = () => {
       <h1>Payment Failed ❌</h1>
       <p>Something went wrong with your payment.</p>
 
-      <button onClick={() => navigate("/")}>
+      <button onClick={() => navigate("/init")}>
         Retry Payment
       </button>
     </div>

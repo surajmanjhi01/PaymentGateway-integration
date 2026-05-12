@@ -5,6 +5,8 @@ import Success from "./components/Success.jsx";
 import Failure from "./components/Failure.jsx";
 import Register from "./components/Register.jsx";
 import Login from "./components/Login.jsx";
+import Course from "./components/course.jsx";
+import CourseAccess from "./components/CourseAccess.jsx";
 
 function App() {
   return (
@@ -17,6 +19,8 @@ function App() {
         <Route path="/success" element={<Success />} />
         <Route path="/failure" element={<Failure />} />
         <Route path="/payments" element={<Payements />} />
+        <Route path="/course" element={<Course />} />
+        <Route path="/course-access" element={<CourseAccess />} />
       </Routes>
     </BrowserRouter>
   );

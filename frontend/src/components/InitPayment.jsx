@@ -3,27 +3,30 @@ import { useNavigate } from "react-router-dom";
 
 const PaymentButton = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  // ✅ Fetch logged-in user details from localStorage
-  useEffect(() => {
+  const [user] = useState(() => {
     const userId = localStorage.getItem("userId");
     const fullName = localStorage.getItem("fullName");
     const email = localStorage.getItem("email");
 
     if (!userId) {
-      // Redirect to login if no user is logged in
-      navigate("/login");
-      return;
+      return null;
     }
 
-    setUser({
+    return {
       userId,
       fullName: fullName || "User",
       email: email || "user@example.com"
-    });
-  }, [navigate]);
+    };
+  });
+
+  // ✅ Fetch logged-in user details from localStorage
+  useEffect(() => {
+    if (!user) {
+      // Redirect to login if no user is logged in
+      navigate("/login");
+    }
+  }, [navigate, user]);
 
   const makePayment = async () => {
     if (!user) {
@@ -172,11 +175,17 @@ const PaymentButton = () => {
 
         <button 
           onClick={() => navigate("/payments")}
-          style={styles.secondaryButton}
+          style={styles.ThirdButton}
         >
           View Payments
         </button>
-
+        <button 
+          onClick={() => navigate("/course")}
+          style={styles.secondaryButton}
+        >
+          View Courses
+        </button>
+          
         <button 
           onClick={() => {
             localStorage.clear();
@@ -241,7 +250,18 @@ const styles = {
     cursor: "pointer",
     marginTop: "10px",
     width: "100%"
-  }
+  },
+   ThirdButton: {
+    padding: "10px 20px",
+    backgroundColor: "#ff0000",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    fontSize: "14px",
+    cursor: "pointer",
+    marginTop: "10px",
+    width: "100%"
+  },
 };
 
 export default PaymentButton;

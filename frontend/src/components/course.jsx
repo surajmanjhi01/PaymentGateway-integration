@@ -1,9 +1,154 @@
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import PaymentButton from "./PaymentButton";
 
+const sampleCourses = [
+  {
+    id: "course_1",
+    title: "AI Engineer Agentic Track",
+    author: "Ed Donner, Ligency",
+    rating: "4.7",
+    ratingsCount: "39,335",
+    price: 1,
+    bg: "linear-gradient(90deg,#ff7b7b,#ffd27b)"
+  },
+  {
+    id: "course_2",
+    title: "AI Engineer Core Track",
+    author: "Ligency, Ed Donner",
+    rating: "4.7",
+    ratingsCount: "34,245",
+    price: 3289,
+    bg: "linear-gradient(90deg,#ffb36b,#ffd67b)"
+  },
+  {
+    id: "course_3",
+    title: "100 Days of Code",
+    author: "Dr. Angela Yu",
+    rating: "4.7",
+    ratingsCount: "422,564",
+    price: 3199,
+    bg: "linear-gradient(90deg,#7bd1ff,#b88bff)"
+  }
+];
 
 const Course = () => {
+  const navigate = useNavigate();
+
+  const [user, setUser] = useState(null);
+  const [accessMap, setAccessMap] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  // ✅ Get logged-in user
+  useEffect(() => {
+    const storedUser = JSON.parse(localStorage.getItem("user"));
+    if (storedUser) {
+      setUser(storedUser);
+    }
+  }, []);
+
+  // ✅ Check course access per course
+  useEffect(() => {
+    const checkAccess = async () => {
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const newAccessMap = {};
+
+      for (const course of sampleCourses) {
+        const res = await fetch(`http://localhost:5000/course?userId=${user._id}&courseId=${course.id}`, {
+          method: "GET",
+        });
+
+        newAccessMap[course.id] = res.ok;
+      }
+
+      setAccessMap(newAccessMap);
+      setLoading(false);
+    };
+
+    checkAccess();
+  }, [user]);
+
+  if (loading) return <p>Loading...</p>;
+
   return (
-    <div>
-      <h1>Course</h1>
+    <div style={{ padding: 20 }}>
+      <h1>Courses</h1>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+          gap: 20,
+          marginTop: 20
+        }}
+      >
+        {sampleCourses.map((course) => (
+          <div
+            key={course.id}
+            style={{
+              border: "1px solid #eee",
+              borderRadius: 10,
+              overflow: "hidden",
+              background: "#fff",
+              boxShadow: "0 6px 18px rgba(0,0,0,0.05)"
+            }}
+          >
+            <div
+              style={{
+                height: 120,
+                background: course.bg,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#fff",
+                fontWeight: "bold",
+                textAlign: "center",
+                padding: 10
+              }}
+            >
+              {course.title}
+            </div>
+
+            <div style={{ padding: 12 }}>
+              <div style={{ fontWeight: 600 }}>{course.author}</div>
+
+              <div style={{ margin: "8px 0", fontSize: 14 }}>
+                ⭐ {course.rating} ({course.ratingsCount})
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <strong>₹{course.price}</strong>
+
+                {accessMap[course.id] ? (
+                  <button
+                    onClick={() => alert("Access Granted")}
+                    style={{
+                      background: "green",
+                      color: "white",
+                      border: "none",
+                      padding: "6px 10px",
+                      borderRadius: 5,
+                      cursor: "pointer"
+                    }}
+                  >
+                    Access Course
+                  </button>
+                ) : (
+                  <PaymentButton
+                    courseId={course.id}
+                    amount={course.price}
+                    userId={user?._id}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
