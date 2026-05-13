@@ -46,7 +46,7 @@ const PaymentButton = () => {
       }
 
       // ✅ CREATE ORDER WITH JWT TOKEN
-      const res = await fetch("http://localhost:5000/create-order", {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/create-order`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -104,7 +104,8 @@ const PaymentButton = () => {
           try {
             const token = localStorage.getItem("token");
             const verifyRes = await fetch(
-              "http://localhost:5000/verify-payment",
+              `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/verify-payment`,
+
               {
                 method: "POST",
                 headers: {

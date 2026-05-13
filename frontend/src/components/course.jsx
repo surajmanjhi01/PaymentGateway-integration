@@ -69,7 +69,7 @@ const Course = () => {
 
       // Check all courses in parallel for speed
       const accessPromises = sampleCourses.map(course =>
-        fetch(`http://localhost:5000/course?courseId=${course.id}`, {
+        fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/course?courseId=${course.id}`, {
           method: "GET",
           headers: {
             "Authorization": `Bearer ${token}`

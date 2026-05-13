@@ -5,7 +5,7 @@ const Payments = () => {
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    fetch("http://localhost:5000/payments", {
+    fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/payments`, {
       headers: {
         "Authorization": `Bearer ${token}` // ✅ Send JWT token
       }
