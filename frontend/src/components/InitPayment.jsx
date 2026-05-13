@@ -37,15 +37,24 @@ const PaymentButton = () => {
 
     setLoading(true);
     try {
-      // ✅ CREATE ORDER WITH LOGGED-IN USER'S ID
+      // Get JWT token from localStorage
+      const token = localStorage.getItem("token");
+      if (!token) {
+        alert("Authentication token not found. Please login again.");
+        navigate("/login");
+        return;
+      }
+
+      // ✅ CREATE ORDER WITH JWT TOKEN
       const res = await fetch("http://localhost:5000/create-order", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` // ✅ Send JWT token
         },
         body: JSON.stringify({
           amount: 1,
-          userId: user.userId, // ✅ Use logged-in user's ID
+          courseId: "demo_course" // Include courseId
         }),
       });
 
@@ -93,12 +102,14 @@ const PaymentButton = () => {
           console.log("Handler triggered", response);
 
           try {
+            const token = localStorage.getItem("token");
             const verifyRes = await fetch(
               "http://localhost:5000/verify-payment",
               {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
+                  "Authorization": `Bearer ${token}` // ✅ Send JWT token
                 },
                 body: JSON.stringify(response),
               }

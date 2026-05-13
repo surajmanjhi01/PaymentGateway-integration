@@ -1,14 +1,23 @@
 const mongoose = require("mongoose");
 const paymentSchema = new mongoose.Schema({
   orderId: { type: String, required: true },
-  paymentId: { type: String, required: true },
+  paymentId: { type: String, required: true, unique: true }, // Unique for idempotency
   amount: { type: Number, required: true },
-  status: { type: String, default: "success" },
+  status: { type: String, enum: ["captured", "pending", "failed"], default: "pending" },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   userName: String,
-  userEmail: String
+  userEmail: String,
+  razorpayDetails: {
+    paymentStatus: String,      // "captured", "failed", "pending"
+    method: String,             // "card", "upi", "netbanking", etc
+    email: String,
+    contact: String
+  }
 }, { timestamps: true });
 
+// Index for faster lookups
+paymentSchema.index({ paymentId: 1 }, { unique: true });
+paymentSchema.index({ userId: 1, createdAt: -1 });
 
 const Payment = mongoose.model("Payment", paymentSchema);
 

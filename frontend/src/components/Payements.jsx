@@ -4,7 +4,12 @@ const Payments = () => {
   const [payments, setPayments] = useState([]);
 
   useEffect(() => {
-    fetch("http://localhost:5000/payments")
+    const token = localStorage.getItem("token");
+    fetch("http://localhost:5000/payments", {
+      headers: {
+        "Authorization": `Bearer ${token}` // ✅ Send JWT token
+      }
+    })
       .then(res => res.json())
       .then(data => {
         if (data.success) {

@@ -1,7 +1,11 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 const User = require("../schemas/UserSchema");
 const router = express.Router();
+
+// JWT Secret - should be in .env
+const JWT_SECRET = process.env.JWT_SECRET || "your_super_secret_key_change_in_production";
 
 // ✅ Register Route
 router.post("/register", async (req, res) => {
@@ -64,8 +68,16 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid password" });
     }
 
+    // Generate JWT token (expires in 7 days)
+    const token = jwt.sign(
+      { userId: user._id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
     res.status(200).json({ 
       message: "Login successful",
+      token,
       userId: user._id,
       fullName: user.fullName,
       email: user.email

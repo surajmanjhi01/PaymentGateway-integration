@@ -15,6 +15,8 @@ const UserCourse = require("./schemas/userCourseSchema");
 
 const authRoutes = require("./routes/routes");
 const protectCourse = require("./middleware/authMiddleware");
+app.use("/razorpay-webhook", express.raw({ type: "application/json" }));
+app.use(express.json()); // keep this AFTER raw webhook
 
 
 // ======================
@@ -46,18 +48,19 @@ const razorpay = new Razorpay({
 
 
 // ======================
-// CREATE ORDER
+// CREATE ORDER (Protected - requires JWT)
 // ======================
 
-app.post("/create-order", async (req, res) => {
+app.post("/create-order", protectCourse, async (req, res) => {
   try {
+    // userId is now from the authenticated user (req.user)
+    const userId = req.user._id;
+    const { amount, courseId } = req.body;
 
-    const { amount, userId, courseId } = req.body;
-
-    if (!amount || !userId || !courseId) {
+    if (!amount || !courseId) {
       return res.status(400).json({
         success: false,
-        message: "amount, userId and courseId required"
+        message: "amount and courseId required"
       });
     }
 
@@ -90,10 +93,10 @@ app.post("/create-order", async (req, res) => {
 
 
 // ======================
-// VERIFY PAYMENT
+// VERIFY PAYMENT (Protected - requires JWT)
 // ======================
 
-app.post("/verify-payment", async (req, res) => {
+app.post("/verify-payment", protectCourse, async (req, res) => {
   console.log("VERIFY API HIT");
 
   const {
@@ -102,92 +105,153 @@ app.post("/verify-payment", async (req, res) => {
     razorpay_signature
   } = req.body;
 
-  // 🔐 Verify Signature
-  const body = razorpay_order_id + "|" + razorpay_payment_id;
-
-  const expectedSignature = crypto
-    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-    .update(body)
-    .digest("hex");
-
-  if (expectedSignature !== razorpay_signature) {
+  // Validation
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
     return res.status(400).json({
       success: false,
-      message: "Invalid signature"
+      message: "Missing payment details"
     });
   }
 
   try {
-    // Fetch order details
-    const order = await razorpay.orders.fetch(razorpay_order_id);
+    // ✅ STEP 1: Verify Signature (Client integrity check)
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(body)
+      .digest("hex");
 
-    const userId = order.notes?.userId;
-    const courseId = order.notes?.courseId;
-
-    if (!userId) {
+    if (expectedSignature !== razorpay_signature) {
+      console.error("❌ Signature Mismatch - Possible tampering");
       return res.status(400).json({
         success: false,
-        message: "Order is missing userId"
+        message: "Invalid signature - payment tampered"
       });
     }
 
-    const user = await User.findById(userId);
+    console.log("✅ Signature verified");
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found"
-      });
-    }
-
+    // ✅ STEP 2: Check if payment already processed (IDEMPOTENCY)
     const existingPayment = await Payment.findOne({
       paymentId: razorpay_payment_id
     });
 
-    // Save Payment
-    if (!existingPayment) {
-      const newPayment = new Payment({
-        orderId: razorpay_order_id,
+    if (existingPayment) {
+      console.log("⚠️  Payment already processed (idempotent)");
+      return res.json({
+        success: true,
+        message: "Payment already verified",
         paymentId: razorpay_payment_id,
-        status: "success",
-        amount: order.amount / 100,
-        userId,
-        userName: user.fullName,
-        userEmail: user.email
+        alreadyProcessed: true
       });
-
-      await newPayment.save();
     }
 
-    // 🔥 Grant Course Access
-    if (userId && courseId) {
+    // ✅ STEP 3-5: Fetch payment & order details in PARALLEL (faster)
+    let paymentDetails, order;
+    try {
+      [paymentDetails, order] = await Promise.all([
+        razorpay.payments.fetch(razorpay_payment_id),
+        razorpay.orders.fetch(razorpay_order_id)
+      ]);
+      console.log("✅ Payment & Order details fetched in parallel");
+    } catch (error) {
+      console.error("❌ Failed to fetch from Razorpay:", error.message);
+      return res.status(500).json({
+        success: false,
+        message: "Unable to verify with Razorpay. Please try again."
+      });
+    }
 
+    // ✅ STEP 4: Confirm payment status is "captured"
+    if (paymentDetails.status !== "captured") {
+      console.error(`❌ Payment status is "${paymentDetails.status}", not "captured"`);
+      return res.status(400).json({
+        success: false,
+        message: `Payment not completed. Status: ${paymentDetails.status}`
+      });
+    }
+
+    // ✅ STEP 6: Validate order amount matches payment amount
+    if (order.amount !== paymentDetails.amount) {
+      console.error(`❌ Amount mismatch - Order: ${order.amount}, Payment: ${paymentDetails.amount}`);
+      return res.status(400).json({
+        success: false,
+        message: "Payment amount does not match order amount"
+      });
+    }
+
+    // ✅ STEP 7: Validate order status
+    if (order.status !== "paid") {
+      console.error(`❌ Order status is "${order.status}", not "paid"`);
+      return res.status(400).json({
+        success: false,
+        message: `Order not paid. Status: ${order.status}`
+      });
+    }
+
+    // ✅ STEP 8: Extract user and course info
+    const userId = req.user._id;
+    const courseId = order.notes?.courseId;
+    const user = req.user;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User authentication failed"
+      });
+    }
+
+    // ✅ STEP 9: Save payment to database (IDEMPOTENT - unique paymentId)
+    const newPayment = new Payment({
+      orderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      status: "captured",
+      amount: order.amount / 100, // Convert paise to rupees
+      userId,
+      userName: user.fullName,
+      userEmail: user.email,
+      razorpayDetails: {
+        paymentStatus: paymentDetails.status,
+        method: paymentDetails.method,
+        email: paymentDetails.email,
+        contact: paymentDetails.contact
+      }
+    });
+
+    await newPayment.save();
+    console.log("✅ Payment saved to database");
+
+    // ✅ STEP 10: Grant course access (IDEMPOTENT - upsert)
+    if (userId && courseId) {
       await UserCourse.updateOne(
         { userId, courseId },
         {
           $set: {
             paymentId: razorpay_payment_id,
-            orderId: razorpay_order_id
+            orderId: razorpay_order_id,
+            accessGrantedAt: new Date()
           }
         },
         { upsert: true }
       );
-
-      console.log("✅ Course Access Granted");
+      console.log("✅ Course access granted");
     }
 
     return res.json({
       success: true,
-      message: "Payment verified and access granted"
+      message: "Payment verified and access granted",
+      paymentId: razorpay_payment_id,
+      amount: order.amount / 100,
+      courseId
     });
 
   } catch (error) {
-
-    console.error("DB Error:", error);
+    console.error("❌ Payment verification error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Database error"
+      message: "Payment verification failed",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
     });
   }
 });
@@ -292,6 +356,70 @@ app.get("/user/:id", async (req, res) => {
     });
   }
 });
+app.post("/razorpay-webhook", async (req, res) => {
+  try {
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+    const signature = req.headers["x-razorpay-signature"];
+
+    const expectedSignature = crypto
+      .createHmac("sha256", webhookSecret)
+      .update(req.body)
+      .digest("hex");
+
+    // 🔐 Verify webhook signature
+    if (expectedSignature !== signature) {
+      return res.status(400).json({ success: false });
+    }
+
+    const event = JSON.parse(req.body);
+
+    console.log("Webhook Event:", event.event);
+
+    // 🎯 Handle successful payment
+    if (event.event === "payment.captured") {
+      const payment = event.payload.payment.entity;
+
+      const orderId = payment.order_id;
+      const paymentId = payment.id;
+
+      // 🔎 Fetch order to get notes (userId, courseId)
+      const order = await razorpay.orders.fetch(orderId);
+
+      const { userId, courseId } = order.notes;
+
+      // 🛑 Prevent duplicate entries
+      const existing = await Payment.findOne({ paymentId });
+
+      if (!existing) {
+        // Save payment
+        await Payment.create({
+          orderId,
+          paymentId,
+          status: "success",
+          amount: payment.amount / 100,
+          userId
+        });
+
+        // Grant course access
+        await UserCourse.create({
+          userId,
+          courseId,
+          paymentId,
+          orderId
+        });
+
+        console.log("Payment & Access Stored");
+      }
+    }
+
+    res.json({ success: true });
+
+  } catch (error) {
+    console.error("Webhook Error:", error);
+    res.status(500).json({ success: false });
+  }
+});
 
 
 // ======================
@@ -304,10 +432,11 @@ app.listen(5000, () => {
 
 
 // ======================
-// LIST PAYMENTS
+// LIST PAYMENTS (Protected - requires JWT)
 // ======================
 
-app.get("/payments", async (req, res) => {
+
+app.get("/payments", protectCourse, async (req, res) => {
   try {
     const payments = await Payment.find().sort({ createdAt: -1 });
     return res.json({ success: true, payments });

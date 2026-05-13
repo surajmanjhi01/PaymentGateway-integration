@@ -18,7 +18,7 @@ const sampleCourses = [
     author: "Ligency, Ed Donner",
     rating: "4.7",
     ratingsCount: "34,245",
-    price: 3289,
+    price: 1,
     bg: "linear-gradient(90deg,#ffb36b,#ffd67b)"
   },
   {
@@ -27,7 +27,7 @@ const sampleCourses = [
     author: "Dr. Angela Yu",
     rating: "4.7",
     ratingsCount: "422,564",
-    price: 3199,
+    price: 1,
     bg: "linear-gradient(90deg,#7bd1ff,#b88bff)"
   }
 ];
@@ -38,6 +38,7 @@ const Course = () => {
   const [user, setUser] = useState(null);
   const [accessMap, setAccessMap] = useState({});
   const [loading, setLoading] = useState(true);
+  const [refetching, setRefetching] = useState(false);
 
   // ✅ Get logged-in user
   useEffect(() => {
@@ -48,27 +49,49 @@ const Course = () => {
   }, []);
 
   // ✅ Check course access per course
-  useEffect(() => {
-    const checkAccess = async () => {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
+  const checkAccess = async (isRefetch = false) => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
+    if (isRefetch) setRefetching(true);
+    else setLoading(true);
+
+    try {
       const newAccessMap = {};
 
-      for (const course of sampleCourses) {
-        const res = await fetch(`http://localhost:5000/course?userId=${user._id}&courseId=${course.id}`, {
+      // Check all courses in parallel for speed
+      const accessPromises = sampleCourses.map(course =>
+        fetch(`http://localhost:5000/course?courseId=${course.id}`, {
           method: "GET",
-        });
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        }).then(res => ({ courseId: course.id, hasAccess: res.ok }))
+      );
 
-        newAccessMap[course.id] = res.ok;
-      }
+      const results = await Promise.all(accessPromises);
+      results.forEach(({ courseId, hasAccess }) => {
+        newAccessMap[courseId] = hasAccess;
+      });
 
       setAccessMap(newAccessMap);
-      setLoading(false);
-    };
+    } catch (error) {
+      console.error("Error checking access:", error);
+    } finally {
+      if (isRefetch) setRefetching(false);
+      else setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     checkAccess();
   }, [user]);
 
@@ -76,8 +99,24 @@ const Course = () => {
 
   return (
     <div style={{ padding: 20 }}>
-      <h1>Courses</h1>
-
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h1>Courses</h1>
+        <button 
+          onClick={() => checkAccess(true)}
+          disabled={refetching}
+          style={{
+            padding: "8px 16px",
+            backgroundColor: "#007bff",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: refetching ? "not-allowed" : "pointer",
+            opacity: refetching ? 0.6 : 1
+          }}
+        >
+          {refetching ? "Refreshing..." : "🔄 Refresh Access"}
+        </button>
+      </div>
       <div
         style={{
           display: "grid",
@@ -125,7 +164,7 @@ const Course = () => {
 
                 {accessMap[course.id] ? (
                   <button
-                    onClick={() => alert("Access Granted")}
+                    onClick={() => navigate(`/course/${course.id}/content`)}
                     style={{
                       background: "green",
                       color: "white",

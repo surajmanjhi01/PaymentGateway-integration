@@ -36,7 +36,8 @@ function Login() {
       if (response.ok) {
         localStorage.clear();
 
-        // Store user info in localStorage
+        // Store JWT token and user info in localStorage
+        localStorage.setItem("token", data.token);
         localStorage.setItem("userId", data.userId);
         localStorage.setItem("fullName", data.fullName);
         localStorage.setItem("email", data.email);

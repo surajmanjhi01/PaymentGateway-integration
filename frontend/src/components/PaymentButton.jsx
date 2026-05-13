@@ -19,9 +19,16 @@ function PaymentButton({ courseId, amount, userId }) {
     const fullName = localStorage.getItem("fullName") || "User";
     const email = localStorage.getItem("email") || "user@example.com";
     const currentUserId = userId || localStorage.getItem("userId");
+    const token = localStorage.getItem("token");
 
     if (!currentUserId) {
       alert("Please login first");
+      navigate("/login");
+      return;
+    }
+
+    if (!token) {
+      alert("Authentication token not found. Please login again.");
       navigate("/login");
       return;
     }
@@ -40,10 +47,10 @@ function PaymentButton({ courseId, amount, userId }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` // ✅ Send JWT token
         },
         body: JSON.stringify({
           amount,
-          userId: currentUserId,
           courseId,
         }),
       });
@@ -64,10 +71,12 @@ function PaymentButton({ courseId, amount, userId }) {
         order_id: data.order.id,
         handler: async function (response) {
           try {
+            const token = localStorage.getItem("token");
             const verifyRes = await fetch("http://localhost:5000/verify-payment", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}` // ✅ Send JWT token
               },
               body: JSON.stringify(response),
             });
@@ -75,12 +84,12 @@ function PaymentButton({ courseId, amount, userId }) {
             const verifyData = await verifyRes.json();
 
             if (verifyRes.ok && verifyData.success) {
-              alert("Payment successful. Course access granted.");
-              navigate("/course");
+              navigate(`/success?paymentId=${response.razorpay_payment_id}&courseId=${courseId}`);
               return;
             }
 
             alert(verifyData.message || "Payment verification failed");
+            navigate("/failure");
           } catch (error) {
             console.error("Verification error:", error);
             alert("Payment done, but verification failed.");
