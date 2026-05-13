@@ -114,7 +114,7 @@ app.post("/verify-payment", protectCourse, async (req, res) => {
   }
 
   try {
-    // ✅ STEP 1: Verify Signature (Client integrity check)
+    //  Verify Signature (Client integrity check)
     const body = razorpay_order_id + "|" + razorpay_payment_id;
     const expectedSignature = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
@@ -131,7 +131,7 @@ app.post("/verify-payment", protectCourse, async (req, res) => {
 
     console.log("✅ Signature verified");
 
-    // ✅ STEP 2: Check if payment already processed (IDEMPOTENCY)
+    // : Check if payment already processed (IDEMPOTENCY)
     const existingPayment = await Payment.findOne({
       paymentId: razorpay_payment_id
     });
@@ -146,14 +146,14 @@ app.post("/verify-payment", protectCourse, async (req, res) => {
       });
     }
 
-    // ✅ STEP 3-5: Fetch payment & order details in PARALLEL (faster)
+    //  Fetch payment & order details in PARALLEL (faster)
     let paymentDetails, order;
     try {
       [paymentDetails, order] = await Promise.all([
         razorpay.payments.fetch(razorpay_payment_id),
         razorpay.orders.fetch(razorpay_order_id)
       ]);
-      console.log("✅ Payment & Order details fetched in parallel");
+      console.log(" Payment & Order details fetched in parallel");
     } catch (error) {
       console.error("❌ Failed to fetch from Razorpay:", error.message);
       return res.status(500).json({
@@ -162,7 +162,7 @@ app.post("/verify-payment", protectCourse, async (req, res) => {
       });
     }
 
-    // ✅ STEP 4: Confirm payment status is "captured"
+    //  Confirm payment status is "captured"
     if (paymentDetails.status !== "captured") {
       console.error(`❌ Payment status is "${paymentDetails.status}", not "captured"`);
       return res.status(400).json({
@@ -171,7 +171,7 @@ app.post("/verify-payment", protectCourse, async (req, res) => {
       });
     }
 
-    // ✅ STEP 6: Validate order amount matches payment amount
+    //  Validate order amount matches payment amount
     if (order.amount !== paymentDetails.amount) {
       console.error(`❌ Amount mismatch - Order: ${order.amount}, Payment: ${paymentDetails.amount}`);
       return res.status(400).json({
@@ -180,7 +180,7 @@ app.post("/verify-payment", protectCourse, async (req, res) => {
       });
     }
 
-    // ✅ STEP 7: Validate order status
+    //  Validate order status
     if (order.status !== "paid") {
       console.error(`❌ Order status is "${order.status}", not "paid"`);
       return res.status(400).json({
@@ -201,7 +201,7 @@ app.post("/verify-payment", protectCourse, async (req, res) => {
       });
     }
 
-    // ✅ STEP 9: Save payment to database (IDEMPOTENT - unique paymentId)
+    //  Save payment to database (IDEMPOTENT - unique paymentId)
     const newPayment = new Payment({
       orderId: razorpay_order_id,
       paymentId: razorpay_payment_id,
@@ -376,19 +376,19 @@ app.post("/razorpay-webhook", async (req, res) => {
 
     console.log("Webhook Event:", event.event);
 
-    // 🎯 Handle successful payment
+    //  Handle successful payment
     if (event.event === "payment.captured") {
       const payment = event.payload.payment.entity;
 
       const orderId = payment.order_id;
       const paymentId = payment.id;
 
-      // 🔎 Fetch order to get notes (userId, courseId)
+      //  Fetch order to get notes (userId, courseId)
       const order = await razorpay.orders.fetch(orderId);
 
       const { userId, courseId } = order.notes;
 
-      // 🛑 Prevent duplicate entries
+      // Prevent duplicate entries
       const existing = await Payment.findOne({ paymentId });
 
       if (!existing) {

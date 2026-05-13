@@ -1,4 +1,4 @@
-# Payment Gateway Integration
+                                       Payment Gateway Integration
 
 This workspace contains a full-stack payment and course-access demo built with **React + Vite** on the frontend and **Node.js + Express + MongoDB** on the backend. The payment provider used in the current implementation is **Razorpay**.
 
