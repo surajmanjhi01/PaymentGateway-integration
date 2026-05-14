@@ -6,6 +6,7 @@ const cors = require("cors");
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
 const mongoose = require("mongoose");
+const path = require("path");
 
 const connectDB = require("./Database/db");
 
@@ -446,6 +447,31 @@ app.post("/razorpay-webhook", async (req, res) => {
 // ======================
 // START SERVER
 // ======================
+
+// =============
+// LIST PAYMENTS (Protected - requires JWT)
+// =============
+
+app.get("/payments", protectCourse, async (req, res) => {
+  try {
+    const payments = await Payment.find().sort({ createdAt: -1 });
+    return res.json({ success: true, payments });
+  } catch (error) {
+    console.error("Payments fetch error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+
+// Serve frontend build and enable SPA fallback in production
+if (process.env.NODE_ENV === "production") {
+  const frontendDist = path.join(__dirname, "..", "frontend", "dist");
+  app.use(express.static(frontendDist));
+
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(frontendDist, "index.html"));
+  });
+}
 
 const PORT = process.env.PORT || 5000;
 
