@@ -25,6 +25,7 @@ app.use("/razorpay-webhook", express.raw({ type: "application/json" }));
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
+  "http://localhost:5174",
   "http://localhost:5173",
   "http://localhost:3000",
   "https://payment-gateway-frontend-gray.vercel.app"
@@ -491,6 +492,6 @@ app.get("/payments", protectCourse, async (req, res) => {
     return res.json({ success: true, payments });
   } catch (error) {
     console.error("Payments fetch error:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({ success: false, message: "Server  error" });
   }
 });
