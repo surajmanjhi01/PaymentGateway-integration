@@ -21,6 +21,7 @@ function App() {
         <Route path="/payments" element={<Payements />} />
         <Route path="/course" element={<Course />} />
         <Route path="/course-access" element={<CourseAccess />} />
+        <Route path="*" element={<h1>404 Not Found</h1>} />
       </Routes>
     </BrowserRouter>
   );
