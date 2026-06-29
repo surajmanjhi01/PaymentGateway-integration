@@ -51,7 +51,7 @@ function Login() {
         );
         
         alert("Login successful!");
-        navigate("/init");
+        navigate("/course");
       } else {
         setError(data.message || "Login failed");
       }
